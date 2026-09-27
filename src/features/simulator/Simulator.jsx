@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
-import { calculateDynamicRoute } from './utils/opticalPower'
+import { calculateDynamicRoute } from '../../utils/opticalPower'
 
 const typeMeta = {
   olt: { label: 'OLT', icon: '◉', defaultLoss: 0 },
@@ -157,7 +157,7 @@ export default function Simulator({ project, onBack }) {
     return () => {
       if (saveTimerRef.current) window.clearTimeout(saveTimerRef.current)
     }
-  }, [nodes, attenuation, selectedId])
+  }, [nodes, attenuation, selectedId, project?.id])
 
   const resetProject = () => {
     const confirmed = window.confirm('¿Restaurar el escenario inicial? Se perderán los cambios guardados en este navegador.')
