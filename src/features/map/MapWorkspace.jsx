@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
-import maplibregl from 'maplibre-gl'
+import * as maplibregl from 'maplibre-gl'
 import 'maplibre-gl/dist/maplibre-gl.css'
 import { api } from '../../services/api'
 
@@ -29,6 +29,7 @@ function nodeDefaultName(type, nodes) {
 }
 
 function powerText(value) {
+  if (value === null || value === undefined || value === '') return 'Sin cálculo'
   return Number.isFinite(Number(value)) ? `${Number(value).toFixed(2)} dBm` : 'Sin cálculo'
 }
 
