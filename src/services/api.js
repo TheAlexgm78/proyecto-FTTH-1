@@ -53,4 +53,23 @@ export const api = {
     method: 'POST',
     body: JSON.stringify({ name, description }),
   }),
+  getNetwork: (projectId) => request(`/projects/${projectId}/network`),
+  createNode: (projectId, payload) => request(`/projects/${projectId}/nodes`, {
+    method: 'POST',
+    body: JSON.stringify(payload),
+  }),
+  updateNode: (projectId, nodeId, payload) => request(`/projects/${projectId}/nodes/${nodeId}`, {
+    method: 'PATCH',
+    body: JSON.stringify(payload),
+  }),
+  deleteNode: (projectId, nodeId) => request(`/projects/${projectId}/nodes/${nodeId}`, {
+    method: 'DELETE',
+  }),
+  createLink: (projectId, payload) => request(`/projects/${projectId}/links`, {
+    method: 'POST',
+    body: JSON.stringify(payload),
+  }),
+  deleteLink: (projectId, linkId) => request(`/projects/${projectId}/links/${linkId}`, {
+    method: 'DELETE',
+  }),
 }
