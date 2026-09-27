@@ -4,6 +4,7 @@ import express from 'express'
 import { checkDatabase } from './db.js'
 import { login, register, requireAuth } from './auth.js'
 import { createProject, listProjects } from './projects.js'
+import { createLink, createNode, deleteLink, deleteNode, getNetwork, updateNode } from './network.js'
 
 const app = express()
 const port = Number(process.env.PORT || 3001)
@@ -41,6 +42,13 @@ app.get('/api/auth/me', requireAuth, (req, res) => {
 
 app.get('/api/projects', requireAuth, listProjects)
 app.post('/api/projects', requireAuth, createProject)
+
+app.get('/api/projects/:projectId/network', requireAuth, getNetwork)
+app.post('/api/projects/:projectId/nodes', requireAuth, createNode)
+app.patch('/api/projects/:projectId/nodes/:nodeId', requireAuth, updateNode)
+app.delete('/api/projects/:projectId/nodes/:nodeId', requireAuth, deleteNode)
+app.post('/api/projects/:projectId/links', requireAuth, createLink)
+app.delete('/api/projects/:projectId/links/:linkId', requireAuth, deleteLink)
 
 app.use((error, _req, res, _next) => {
   console.error('UNHANDLED_REQUEST_ERROR', error)
