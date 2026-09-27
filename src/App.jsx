@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react'
 import Simulator from './features/simulator/Simulator'
+import MapWorkspace from './features/map/MapWorkspace'
 import { api, getToken, setToken } from './services/api'
 
 function AuthScreen({ onAuthenticated }) {
@@ -94,6 +95,22 @@ function AuthScreen({ onAuthenticated }) {
   )
 }
 
+function ProjectWorkspace({ project, onBack }) {
+  const [view, setView] = useState('map')
+
+  if (view === 'simulator') {
+    return <Simulator project={project} onBack={() => setView('map')} />
+  }
+
+  return (
+    <MapWorkspace
+      project={project}
+      onBack={onBack}
+      onOpenSimulator={() => setView('simulator')}
+    />
+  )
+}
+
 function Dashboard({ user, onLogout, onOpenProject }) {
   const [projects, setProjects] = useState([])
   const [name, setName] = useState('')
@@ -144,7 +161,7 @@ function Dashboard({ user, onLogout, onOpenProject }) {
             <span className="eyebrow">NETWORK MANAGER</span>
           </div>
           <h1>Mis proyectos</h1>
-          <p className="muted">Administra tus redes y entra al simulador de cada proyecto.</p>
+          <p className="muted">Administra tus redes, mapas, cables y simulación óptica por proyecto.</p>
         </div>
         <div className="user-box">
           <div><strong>{user.displayName}</strong><small>{user.email}</small></div>
@@ -251,7 +268,7 @@ export default function App() {
   }
 
   if (activeProject) {
-    return <Simulator project={activeProject} onBack={() => setActiveProject(null)} />
+    return <ProjectWorkspace project={activeProject} onBack={() => setActiveProject(null)} />
   }
 
   return (
