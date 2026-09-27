@@ -1,55 +1,67 @@
-export function db(value) {
-  return Number(value || 0)
-}
-
 export function fiberLoss(distanceMeters, attenuationDbPerKm) {
-  return (Number(distanceMeters || 0) / 1000) * Number(attenuationDbPerKm || 0)
+  return (Math.max(0, Number(distanceMeters || 0)) / 1000) * Math.max(0, Number(attenuationDbPerKm || 0))
 }
 
 export function splitterLoss(outputs, excessLossDb = 1) {
   const n = Math.max(1, Number(outputs || 1))
-  return 10 * Math.log10(n) + Number(excessLossDb || 0)
+  return 10 * Math.log10(n) + Math.max(0, Number(excessLossDb || 0))
 }
 
-export function calculateBudget(config) {
-  const tx = Number(config.txPowerDbm || 0)
-  const feeder = fiberLoss(config.feederMeters, config.attenuationDbPerKm)
-  const distribution = fiberLoss(config.distributionMeters, config.attenuationDbPerKm)
-  const drop = fiberLoss(config.dropMeters, config.attenuationDbPerKm)
-  const splice1 = Number(config.splice1Db || 0)
-  const splice2 = Number(config.splice2Db || 0)
-  const connectorLoss = Number(config.connectorCount || 0) * Number(config.connectorLossDb || 0)
-  const split = splitterLoss(config.splitterOutputs, config.splitterExcessDb)
+export function nodeLoss(node) {
+  if (!node) return 0
+  if (node.type === 'splitter') {
+    return splitterLoss(node.outputs, node.excessLossDb)
+  }
+  return Math.max(0, Number(node.lossDb || 0))
+}
 
-  const checkpoints = []
-  let power = tx
-  checkpoints.push({ id: 'olt', label: 'Salida OLT', powerDbm: power, lossDb: 0 })
+export function calculateDynamicRoute(nodes, attenuationDbPerKm = 0.35) {
+  if (!Array.isArray(nodes) || nodes.length === 0) {
+    return { checkpoints: [], totalLossDb: 0, rxPowerDbm: 0, totalDistanceMeters: 0 }
+  }
 
-  power -= feeder
-  checkpoints.push({ id: 'feeder', label: 'Después del feeder', powerDbm: power, lossDb: feeder })
+  const first = nodes[0]
+  let power = Number(first.txPowerDbm || 0)
+  let totalLoss = 0
+  let totalDistanceMeters = 0
+  const checkpoints = [{
+    id: first.id,
+    label: first.name,
+    type: first.type,
+    powerDbm: power,
+    nodeLossDb: 0,
+    fiberLossDb: 0,
+    distanceFromPrevious: 0,
+  }]
 
-  power -= splice1
-  checkpoints.push({ id: 'mufa', label: 'Después del empalme 1', powerDbm: power, lossDb: splice1 })
+  for (let index = 1; index < nodes.length; index += 1) {
+    const node = nodes[index]
+    const distance = Math.max(0, Number(node.distanceFromPrevious || 0))
+    const cableLoss = fiberLoss(distance, attenuationDbPerKm)
+    const equipmentLoss = nodeLoss(node)
 
-  power -= distribution
-  checkpoints.push({ id: 'distribution', label: 'Después de distribución', powerDbm: power, lossDb: distribution })
+    power -= cableLoss
+    totalLoss += cableLoss
+    totalDistanceMeters += distance
 
-  power -= split
-  checkpoints.push({ id: 'splitter', label: `Salida splitter 1:${Math.max(1, Number(config.splitterOutputs || 1))}`, powerDbm: power, lossDb: split })
+    power -= equipmentLoss
+    totalLoss += equipmentLoss
 
-  power -= splice2
-  checkpoints.push({ id: 'nap', label: 'Después del empalme 2 / NAP', powerDbm: power, lossDb: splice2 })
-
-  power -= drop
-  checkpoints.push({ id: 'drop', label: 'Después del drop', powerDbm: power, lossDb: drop })
-
-  power -= connectorLoss
-  checkpoints.push({ id: 'ont', label: 'Entrada ONT', powerDbm: power, lossDb: connectorLoss })
+    checkpoints.push({
+      id: node.id,
+      label: node.name,
+      type: node.type,
+      powerDbm: power,
+      nodeLossDb: equipmentLoss,
+      fiberLossDb: cableLoss,
+      distanceFromPrevious: distance,
+    })
+  }
 
   return {
     checkpoints,
-    totalLossDb: tx - power,
+    totalLossDb: totalLoss,
     rxPowerDbm: power,
-    losses: { feeder, distribution, drop, splice1, splice2, connectorLoss, split },
+    totalDistanceMeters,
   }
 }
