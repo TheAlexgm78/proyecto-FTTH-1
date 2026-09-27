@@ -1,248 +1,277 @@
 import { useMemo, useState } from 'react'
-import { calculateBudget } from './utils/opticalPower'
+import { calculateDynamicRoute } from './utils/opticalPower'
 
-const fiberColors = [
-  ['Azul', '#2f80ed'], ['Naranja', '#f2994a'], ['Verde', '#27ae60'], ['Marrón', '#8d6e63'],
-  ['Gris', '#9e9e9e'], ['Blanco', '#f5f5f5'], ['Rojo', '#eb5757'], ['Negro', '#222'],
-  ['Amarillo', '#f2c94c'], ['Violeta', '#9b51e0'], ['Rosa', '#ff7eb6'], ['Aqua', '#56ccf2'],
-]
-
-const buffers = [
-  { id: 'azul', name: 'Buffer azul', color: '#2f80ed', range: 'Fibras 01–12' },
-  { id: 'naranja', name: 'Buffer naranja', color: '#f2994a', range: 'Fibras 13–24' },
-]
-
-function NumberField({ label, value, onChange, step = '0.1', min = 0, suffix }) {
-  return (
-    <label className="control-field">
-      <span>{label}</span>
-      <div className="input-wrap">
-        <input
-          type="number"
-          value={value}
-          step={step}
-          min={min}
-          onChange={(e) => onChange(Number(e.target.value))}
-        />
-        {suffix && <small>{suffix}</small>}
-      </div>
-    </label>
-  )
+const typeMeta = {
+  olt: { label: 'OLT', icon: '◉', defaultLoss: 0 },
+  odf: { label: 'ODF', icon: '▦', defaultLoss: 0.3 },
+  mufa: { label: 'Mufa', icon: '⬡', defaultLoss: 0.08 },
+  splitter: { label: 'Splitter', icon: '⑧', defaultLoss: 0 },
+  nap: { label: 'NAP / CTO', icon: '▣', defaultLoss: 0.08 },
+  ont: { label: 'ONT', icon: '⌂', defaultLoss: 0.3 },
 }
 
-function FiberButton({ fiber, selected, onSelect, spliced }) {
-  const [name, color] = fiber
-  const number = fiberColors.findIndex((item) => item[0] === name) + 1
+const starterNodes = [
+  { id: 'olt-1', type: 'olt', name: 'OLT Central', txPowerDbm: 4.5, distanceFromPrevious: 0 },
+  { id: 'odf-1', type: 'odf', name: 'ODF Puerto 17', lossDb: 0.3, distanceFromPrevious: 20 },
+  { id: 'mufa-1', type: 'mufa', name: 'MUFA-001', lossDb: 0.08, distanceFromPrevious: 1850 },
+  { id: 'splitter-1', type: 'splitter', name: 'Splitter principal', outputs: 8, excessLossDb: 1, distanceFromPrevious: 430 },
+  { id: 'nap-1', type: 'nap', name: 'NAP-015', lossDb: 0.08, distanceFromPrevious: 670 },
+  { id: 'ont-1', type: 'ont', name: 'ONT Cliente 001', lossDb: 0.3, distanceFromPrevious: 85 },
+]
+
+function uid(prefix) {
+  return `${prefix}-${Date.now()}-${Math.random().toString(16).slice(2)}`
+}
+
+function NodeIcon({ type }) {
+  return <span className="node-symbol">{typeMeta[type]?.icon || '•'}</span>
+}
+
+function NodeEditor({ node, onChange, onDelete, isFirst, isLast }) {
+  const meta = typeMeta[node.type] || typeMeta.mufa
   return (
-    <button className={`splice-fiber ${selected ? 'selected' : ''} ${spliced ? 'spliced' : ''}`} onClick={() => onSelect(number)}>
-      <span className="fiber-line" style={{ backgroundColor: color }} />
-      <span className="fiber-number">{String(number).padStart(2, '0')}</span>
-      <span>{name}</span>
-    </button>
+    <div className="editor-card">
+      <div className="editor-card-head">
+        <div className="editor-title">
+          <NodeIcon type={node.type} />
+          <div>
+            <strong>{meta.label}</strong>
+            <small>{node.name}</small>
+          </div>
+        </div>
+        {!isFirst && !isLast && (
+          <button className="icon-btn danger" onClick={onDelete} title="Eliminar nodo">×</button>
+        )}
+      </div>
+
+      <label className="field">
+        <span>Nombre</span>
+        <input value={node.name} onChange={(e) => onChange({ name: e.target.value })} />
+      </label>
+
+      {!isFirst && (
+        <label className="field">
+          <span>Distancia desde el punto anterior</span>
+          <div className="input-suffix">
+            <input type="number" min="0" step="10" value={node.distanceFromPrevious} onChange={(e) => onChange({ distanceFromPrevious: Number(e.target.value) })} />
+            <b>m</b>
+          </div>
+        </label>
+      )}
+
+      {node.type === 'olt' && (
+        <label className="field">
+          <span>Potencia TX</span>
+          <div className="input-suffix">
+            <input type="number" step="0.1" value={node.txPowerDbm} onChange={(e) => onChange({ txPowerDbm: Number(e.target.value) })} />
+            <b>dBm</b>
+          </div>
+        </label>
+      )}
+
+      {node.type === 'splitter' ? (
+        <div className="two-fields">
+          <label className="field">
+            <span>Salidas</span>
+            <input type="number" min="2" step="1" value={node.outputs} onChange={(e) => onChange({ outputs: Math.max(2, Number(e.target.value)) })} />
+          </label>
+          <label className="field">
+            <span>Pérdida extra</span>
+            <div className="input-suffix">
+              <input type="number" min="0" step="0.1" value={node.excessLossDb} onChange={(e) => onChange({ excessLossDb: Number(e.target.value) })} />
+              <b>dB</b>
+            </div>
+          </label>
+        </div>
+      ) : node.type !== 'olt' && (
+        <label className="field">
+          <span>Pérdida del nodo</span>
+          <div className="input-suffix">
+            <input type="number" min="0" step="0.01" value={node.lossDb} onChange={(e) => onChange({ lossDb: Number(e.target.value) })} />
+            <b>dB</b>
+          </div>
+        </label>
+      )}
+    </div>
   )
 }
 
 function App() {
-  const [tab, setTab] = useState('power')
-  const [budgetConfig, setBudgetConfig] = useState({
-    txPowerDbm: 4,
-    attenuationDbPerKm: 0.35,
-    feederMeters: 1800,
-    distributionMeters: 700,
-    dropMeters: 120,
-    splice1Db: 0.08,
-    splice2Db: 0.08,
-    connectorCount: 2,
-    connectorLossDb: 0.3,
-    splitterOutputs: 8,
-    splitterExcessDb: 1,
-  })
+  const [nodes, setNodes] = useState(starterNodes)
+  const [attenuation, setAttenuation] = useState(0.35)
+  const [selectedId, setSelectedId] = useState('mufa-1')
+  const [newType, setNewType] = useState('mufa')
+  const route = useMemo(() => calculateDynamicRoute(nodes, attenuation), [nodes, attenuation])
+  const selected = nodes.find((node) => node.id === selectedId) || nodes[0]
+  const selectedResult = route.checkpoints.find((point) => point.id === selected?.id)
 
-  const [bufferId, setBufferId] = useState('azul')
-  const [inputFiber, setInputFiber] = useState(null)
-  const [outputFiber, setOutputFiber] = useState(null)
-  const [splices, setSplices] = useState([])
-  const [message, setMessage] = useState('Objetivo: empalma la fibra 03 Verde con la fibra 03 Verde.')
-
-  const budget = useMemo(() => calculateBudget(budgetConfig), [budgetConfig])
-  const activeBuffer = buffers.find((buffer) => buffer.id === bufferId)
-
-  const updateBudget = (key, value) => setBudgetConfig((current) => ({ ...current, [key]: value }))
-
-  const makeSplice = () => {
-    if (!inputFiber || !outputFiber) {
-      setMessage('Selecciona una fibra de entrada y otra de salida.')
-      return
-    }
-    if (inputFiber !== outputFiber) {
-      setMessage(`⚠ Empalme incorrecto: fibra ${String(inputFiber).padStart(2, '0')} no corresponde con fibra ${String(outputFiber).padStart(2, '0')}.`)
-      return
-    }
-    const key = `${bufferId}-${inputFiber}`
-    if (splices.includes(key)) {
-      setMessage('Ese hilo ya está empalmado.')
-      return
-    }
-    setSplices((current) => [...current, key])
-    setMessage(inputFiber === 3 && bufferId === 'azul'
-      ? '✓ Correcto. Reparaste el hilo objetivo: Buffer azul, fibra 03 Verde.'
-      : `✓ Empalme correcto: ${activeBuffer.name}, fibra ${String(inputFiber).padStart(2, '0')}.`)
-    setInputFiber(null)
-    setOutputFiber(null)
+  const updateNode = (id, patch) => {
+    setNodes((current) => current.map((node) => node.id === id ? { ...node, ...patch } : node))
   }
+
+  const addNode = () => {
+    const insertAt = Math.max(1, nodes.length - 1)
+    const meta = typeMeta[newType]
+    const count = nodes.filter((node) => node.type === newType).length + 1
+    const node = {
+      id: uid(newType),
+      type: newType,
+      name: `${meta.label} ${String(count).padStart(2, '0')}`,
+      distanceFromPrevious: 250,
+      ...(newType === 'splitter' ? { outputs: 8, excessLossDb: 1 } : { lossDb: meta.defaultLoss }),
+    }
+    setNodes((current) => [...current.slice(0, insertAt), node, ...current.slice(insertAt)])
+    setSelectedId(node.id)
+  }
+
+  const deleteNode = (id) => {
+    setNodes((current) => current.filter((node) => node.id !== id))
+    setSelectedId(nodes[0]?.id)
+  }
+
+  const powerClass = route.rxPowerDbm >= -20 ? 'good' : route.rxPowerDbm >= -27 ? 'warn' : 'bad'
 
   return (
     <div className="app-shell">
-      <header className="topbar">
+      <header className="hero">
         <div>
-          <p className="eyebrow">LABORATORIO EDUCATIVO</p>
-          <h1>Simulador FTTH</h1>
-          <p className="muted">Diseña la ruta, calcula potencia y practica empalmes.</p>
+          <div className="brand-row">
+            <span className="brand-mark">FTTH</span>
+            <span className="eyebrow">NETWORK LAB</span>
+          </div>
+          <h1>Diseñador y simulador de red óptica</h1>
+          <p className="hero-copy">Construye la ruta, define distancias, pérdidas y splitters, y observa la potencia óptica en cada punto.</p>
         </div>
-        <div className="status-pill">● Simulación activa</div>
+        <div className={`rx-badge ${powerClass}`}>
+          <span>ONT estimada</span>
+          <strong>{route.rxPowerDbm.toFixed(2)} dBm</strong>
+        </div>
       </header>
 
-      <nav className="tabs">
-        <button className={tab === 'power' ? 'tab active' : 'tab'} onClick={() => setTab('power')}>Presupuesto óptico</button>
-        <button className={tab === 'splice' ? 'tab active' : 'tab'} onClick={() => setTab('splice')}>Mufa y empalmes</button>
-      </nav>
+      <main className="designer-grid">
+        <aside className="toolbox panel">
+          <p className="eyebrow">CONSTRUCTOR</p>
+          <h2>Agregar elementos</h2>
+          <p className="muted">Los nuevos nodos se insertan antes de la ONT.</p>
 
-      {tab === 'power' && (
-        <main className="power-layout">
-          <section className="workspace">
-            <div className="section-heading">
+          <label className="field">
+            <span>Tipo de elemento</span>
+            <select value={newType} onChange={(e) => setNewType(e.target.value)}>
+              <option value="odf">ODF</option>
+              <option value="mufa">Mufa</option>
+              <option value="splitter">Splitter</option>
+              <option value="nap">NAP / CTO</option>
+            </select>
+          </label>
+          <button className="primary-btn full" onClick={addNode}>+ Agregar a la ruta</button>
+
+          <div className="divider" />
+
+          <label className="field">
+            <span>Atenuación de fibra</span>
+            <div className="input-suffix">
+              <input type="number" min="0" step="0.01" value={attenuation} onChange={(e) => setAttenuation(Number(e.target.value))} />
+              <b>dB/km</b>
+            </div>
+          </label>
+
+          <div className="stat-list">
+            <div><span>Distancia total</span><strong>{route.totalDistanceMeters.toLocaleString()} m</strong></div>
+            <div><span>Pérdida total</span><strong>{route.totalLossDb.toFixed(2)} dB</strong></div>
+            <div><span>Nodos</span><strong>{nodes.length}</strong></div>
+          </div>
+
+          <div className="mini-note">
+            Este motor ya está preparado para que cada nodo pueda tener coordenadas reales cuando agreguemos el mapa.
+          </div>
+        </aside>
+
+        <section className="canvas panel">
+          <div className="canvas-head">
+            <div>
+              <p className="eyebrow">RUTA ACTIVA</p>
+              <h2>OLT → cliente</h2>
+            </div>
+            <div className="legend">
+              <span><i className="dot good-dot" /> potencia cómoda</span>
+              <span><i className="dot warn-dot" /> revisar margen</span>
+              <span><i className="dot bad-dot" /> potencia crítica</span>
+            </div>
+          </div>
+
+          <div className="route-canvas">
+            {nodes.map((node, index) => {
+              const result = route.checkpoints[index]
+              const next = nodes[index + 1]
+              return (
+                <div className="route-row" key={node.id}>
+                  <button className={`route-node ${selectedId === node.id ? 'selected' : ''}`} onClick={() => setSelectedId(node.id)}>
+                    <div className="route-node-icon"><NodeIcon type={node.type} /></div>
+                    <div className="route-node-copy">
+                      <small>{typeMeta[node.type]?.label}</small>
+                      <strong>{node.name}</strong>
+                      <span>{result?.powerDbm.toFixed(2)} dBm</span>
+                    </div>
+                  </button>
+
+                  {next && (
+                    <div className="route-segment">
+                      <div className="segment-line">
+                        <span />
+                      </div>
+                      <div className="segment-data">
+                        <b>{next.distanceFromPrevious.toLocaleString()} m</b>
+                        <small>−{result && route.checkpoints[index + 1] ? route.checkpoints[index + 1].fiberLossDb.toFixed(2) : '0.00'} dB fibra</small>
+                      </div>
+                    </div>
+                  )}
+                </div>
+              )
+            })}
+          </div>
+
+          <div className="power-strip">
+            {route.checkpoints.map((point) => (
+              <div key={point.id}>
+                <small>{point.label}</small>
+                <strong>{point.powerDbm.toFixed(2)}</strong>
+                <span>dBm</span>
+              </div>
+            ))}
+          </div>
+        </section>
+
+        <aside className="inspector panel">
+          <p className="eyebrow">INSPECTOR</p>
+          <h2>{selected?.name}</h2>
+          <p className="muted">{typeMeta[selected?.type]?.label}</p>
+
+          {selected && (
+            <NodeEditor
+              node={selected}
+              onChange={(patch) => updateNode(selected.id, patch)}
+              onDelete={() => deleteNode(selected.id)}
+              isFirst={selected.id === nodes[0]?.id}
+              isLast={selected.id === nodes[nodes.length - 1]?.id}
+            />
+          )}
+
+          {selectedResult && (
+            <div className="measurement-card">
+              <span>Potencia en este punto</span>
+              <strong>{selectedResult.powerDbm.toFixed(2)} dBm</strong>
               <div>
-                <span className="step">ESCENARIO DE RED</span>
-                <h2>Potencia desde la OLT hasta la ONT</h2>
-                <p className="muted">Todos los valores son editables. El cálculo se actualiza automáticamente.</p>
+                <small>Pérdida tramo</small>
+                <b>−{selectedResult.fiberLossDb.toFixed(2)} dB</b>
               </div>
-            </div>
-
-            <div className="power-route">
-              {budget.checkpoints.map((point, index) => (
-                <div className="power-stage" key={point.id}>
-                  <div className="stage-card">
-                    <small>{point.label}</small>
-                    <strong>{point.powerDbm.toFixed(2)} dBm</strong>
-                    {point.lossDb > 0 && <span>−{point.lossDb.toFixed(2)} dB</span>}
-                  </div>
-                  {index < budget.checkpoints.length - 1 && <div className="route-arrow">→</div>}
-                </div>
-              ))}
-            </div>
-
-            <div className="summary-grid">
-              <div className="summary-card">
-                <span>Pérdida total</span>
-                <strong>{budget.totalLossDb.toFixed(2)} dB</strong>
-              </div>
-              <div className="summary-card">
-                <span>Potencia estimada en ONT</span>
-                <strong>{budget.rxPowerDbm.toFixed(2)} dBm</strong>
-              </div>
-              <div className="summary-card">
-                <span>Distancia total</span>
-                <strong>{(budgetConfig.feederMeters + budgetConfig.distributionMeters + budgetConfig.dropMeters).toLocaleString()} m</strong>
-              </div>
-              <div className="summary-card">
-                <span>Splitter</span>
-                <strong>1:{budgetConfig.splitterOutputs}</strong>
-              </div>
-            </div>
-
-            <div className="loss-table">
-              <div><span>Feeder</span><b>{budgetConfig.feederMeters} m</b><strong>−{budget.losses.feeder.toFixed(2)} dB</strong></div>
-              <div><span>Empalme 1</span><b>MUFA-001</b><strong>−{budget.losses.splice1.toFixed(2)} dB</strong></div>
-              <div><span>Distribución</span><b>{budgetConfig.distributionMeters} m</b><strong>−{budget.losses.distribution.toFixed(2)} dB</strong></div>
-              <div><span>Splitter</span><b>1:{budgetConfig.splitterOutputs}</b><strong>−{budget.losses.split.toFixed(2)} dB</strong></div>
-              <div><span>Empalme 2</span><b>NAP / CTO</b><strong>−{budget.losses.splice2.toFixed(2)} dB</strong></div>
-              <div><span>Drop</span><b>{budgetConfig.dropMeters} m</b><strong>−{budget.losses.drop.toFixed(2)} dB</strong></div>
-              <div><span>Conectores</span><b>{budgetConfig.connectorCount} × {budgetConfig.connectorLossDb} dB</b><strong>−{budget.losses.connectorLoss.toFixed(2)} dB</strong></div>
-            </div>
-          </section>
-
-          <aside className="inspector">
-            <p className="eyebrow">PARÁMETROS</p>
-            <h2>Configurar red</h2>
-            <p className="muted">Pon aquí las distancias y pérdidas de tu escenario real.</p>
-
-            <div className="form-grid">
-              <NumberField label="Potencia OLT" value={budgetConfig.txPowerDbm} onChange={(v) => updateBudget('txPowerDbm', v)} step="0.1" min={-10} suffix="dBm" />
-              <NumberField label="Atenuación fibra" value={budgetConfig.attenuationDbPerKm} onChange={(v) => updateBudget('attenuationDbPerKm', v)} step="0.01" suffix="dB/km" />
-              <NumberField label="Feeder" value={budgetConfig.feederMeters} onChange={(v) => updateBudget('feederMeters', v)} step="10" suffix="m" />
-              <NumberField label="Distribución" value={budgetConfig.distributionMeters} onChange={(v) => updateBudget('distributionMeters', v)} step="10" suffix="m" />
-              <NumberField label="Drop cliente" value={budgetConfig.dropMeters} onChange={(v) => updateBudget('dropMeters', v)} step="10" suffix="m" />
-              <NumberField label="Pérdida empalme 1" value={budgetConfig.splice1Db} onChange={(v) => updateBudget('splice1Db', v)} step="0.01" suffix="dB" />
-              <NumberField label="Pérdida empalme 2" value={budgetConfig.splice2Db} onChange={(v) => updateBudget('splice2Db', v)} step="0.01" suffix="dB" />
-              <NumberField label="Conectores" value={budgetConfig.connectorCount} onChange={(v) => updateBudget('connectorCount', v)} step="1" suffix="uds" />
-              <NumberField label="Pérdida por conector" value={budgetConfig.connectorLossDb} onChange={(v) => updateBudget('connectorLossDb', v)} step="0.05" suffix="dB" />
-              <NumberField label="Salidas del splitter" value={budgetConfig.splitterOutputs} onChange={(v) => updateBudget('splitterOutputs', Math.max(1, Math.round(v)))} step="1" suffix="salidas" />
-              <NumberField label="Pérdida extra splitter" value={budgetConfig.splitterExcessDb} onChange={(v) => updateBudget('splitterExcessDb', v)} step="0.1" suffix="dB" />
-            </div>
-
-            <div className="info-box accent">
-              <strong>Cómo calcula el splitter</strong>
-              <p>Usa 10·log10(N) + pérdida extra. Esto permite probar 1:8, 1:6, 1:16 o cualquier cantidad de salidas.</p>
-            </div>
-          </aside>
-        </main>
-      )}
-
-      {tab === 'splice' && (
-        <main className="layout">
-          <section className="workspace splice-workshop">
-            <div className="workshop-head">
               <div>
-                <p className="eyebrow">MUFA-001 · BANDEJA 01</p>
-                <h2>Mesa de empalme</h2>
-                <p className="muted">Selecciona el buffer y une el hilo correcto.</p>
+                <small>Pérdida elemento</small>
+                <b>−{selectedResult.nodeLossDb.toFixed(2)} dB</b>
               </div>
             </div>
-
-            <div className="exercise-banner" aria-live="polite"><strong>Ejercicio:</strong> {message}</div>
-
-            <div className="buffer-tabs">
-              {buffers.map((buffer) => (
-                <button key={buffer.id} className={bufferId === buffer.id ? 'buffer-tab active' : 'buffer-tab'} onClick={() => { setBufferId(buffer.id); setInputFiber(null); setOutputFiber(null) }}>
-                  <span style={{ background: buffer.color }} /><b>{buffer.name}</b><small>{buffer.range}</small>
-                </button>
-              ))}
-            </div>
-
-            <div className="splice-board">
-              <div className="cable-column">
-                <div className="cable-title"><span>←</span><div><strong>Cable entrante</strong><small>Desde ODF</small></div></div>
-                <div className="fiber-list">
-                  {fiberColors.map((fiber, index) => <FiberButton key={fiber[0]} fiber={fiber} selected={inputFiber === index + 1} onSelect={setInputFiber} spliced={splices.includes(`${bufferId}-${index + 1}`)} />)}
-                </div>
-              </div>
-
-              <div className="fusion-center">
-                <div className="fusion-machine">⚡<strong>Fusionadora</strong><small>Bandeja 01</small></div>
-                <div className="selection-summary">
-                  <span>Entrada: <b>{inputFiber ? String(inputFiber).padStart(2, '0') : '—'}</b></span>
-                  <span>Salida: <b>{outputFiber ? String(outputFiber).padStart(2, '0') : '—'}</b></span>
-                </div>
-                <button className="primary-btn" onClick={makeSplice}>Realizar empalme</button>
-              </div>
-
-              <div className="cable-column">
-                <div className="cable-title right"><div><strong>Cable saliente</strong><small>Hacia splitter</small></div><span>→</span></div>
-                <div className="fiber-list">
-                  {fiberColors.map((fiber, index) => <FiberButton key={fiber[0]} fiber={fiber} selected={outputFiber === index + 1} onSelect={setOutputFiber} spliced={splices.includes(`${bufferId}-${index + 1}`)} />)}
-                </div>
-              </div>
-            </div>
-          </section>
-
-          <aside className="inspector">
-            <p className="eyebrow">ESTADO</p>
-            <h2>Empalmes</h2>
-            <div className="metric"><span>Correctos</span><strong>{splices.length}</strong></div>
-            <div className="info-box"><strong>{activeBuffer.name}</strong><p>{activeBuffer.range}</p></div>
-          </aside>
-        </main>
-      )}
+          )}
+        </aside>
+      </main>
     </div>
   )
 }
