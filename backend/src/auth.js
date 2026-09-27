@@ -2,12 +2,12 @@ import bcrypt from 'bcryptjs'
 import jwt from 'jsonwebtoken'
 import { pool } from './db.js'
 
-const JWT_SECRET = process.env.JWT_SECRET
-
-function requireJwtSecret() {
-  if (!JWT_SECRET) {
+function getJwtSecret() {
+  const secret = process.env.JWT_SECRET
+  if (!secret) {
     throw new Error('JWT_SECRET no está configurado en backend/.env')
   }
+  return secret
 }
 
 function publicUser(row) {
@@ -21,14 +21,13 @@ function publicUser(row) {
 }
 
 function signToken(user) {
-  requireJwtSecret()
   return jwt.sign(
     {
       sub: String(user.id),
       email: user.email,
       role: user.role,
     },
-    JWT_SECRET,
+    getJwtSecret(),
     { expiresIn: '8h' },
   )
 }
@@ -52,7 +51,7 @@ export async function register(req, res) {
   }
 
   try {
-    requireJwtSecret()
+    getJwtSecret()
     const passwordHash = await bcrypt.hash(password, 12)
     const result = await pool.query(
       `INSERT INTO app_users (email, password_hash, display_name, role)
@@ -77,7 +76,7 @@ export async function login(req, res) {
   const password = String(req.body?.password || '')
 
   try {
-    requireJwtSecret()
+    getJwtSecret()
     const result = await pool.query(
       `SELECT id, email, password_hash, display_name, role, created_at
        FROM app_users
@@ -101,7 +100,6 @@ export async function login(req, res) {
 
 export async function requireAuth(req, res, next) {
   try {
-    requireJwtSecret()
     const header = req.headers.authorization || ''
     const [scheme, token] = header.split(' ')
 
@@ -109,7 +107,7 @@ export async function requireAuth(req, res, next) {
       return res.status(401).json({ ok: false, error: 'Token requerido.' })
     }
 
-    const payload = jwt.verify(token, JWT_SECRET)
+    const payload = jwt.verify(token, getJwtSecret())
     const result = await pool.query(
       `SELECT id, email, display_name, role, created_at
        FROM app_users
