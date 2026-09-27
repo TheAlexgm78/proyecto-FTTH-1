@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { calculateDynamicRoute } from './utils/opticalPower'
 
 const typeMeta = {
@@ -18,6 +18,32 @@ const starterNodes = [
   { id: 'nap-1', type: 'nap', name: 'NAP-015', lossDb: 0.08, distanceFromPrevious: 670 },
   { id: 'ont-1', type: 'ont', name: 'ONT Cliente 001', lossDb: 0.3, distanceFromPrevious: 85 },
 ]
+
+const STORAGE_KEY = 'ftth-network-lab-project-v1'
+
+function getInitialProject() {
+  if (typeof window === 'undefined') {
+    return { nodes: starterNodes, attenuation: 0.35, selectedId: 'mufa-1' }
+  }
+
+  try {
+    const raw = window.localStorage.getItem(STORAGE_KEY)
+    if (!raw) return { nodes: starterNodes, attenuation: 0.35, selectedId: 'mufa-1' }
+
+    const saved = JSON.parse(raw)
+    const validNodes = Array.isArray(saved.nodes) && saved.nodes.length >= 2
+    if (!validNodes) throw new Error('Proyecto guardado inválido')
+
+    return {
+      nodes: saved.nodes,
+      attenuation: Number.isFinite(Number(saved.attenuation)) ? Number(saved.attenuation) : 0.35,
+      selectedId: saved.selectedId || saved.nodes[0]?.id,
+    }
+  } catch (error) {
+    console.warn('No se pudo cargar el proyecto guardado.', error)
+    return { nodes: starterNodes, attenuation: 0.35, selectedId: 'mufa-1' }
+  }
+}
 
 function uid(prefix) {
   return `${prefix}-${Date.now()}-${Math.random().toString(16).slice(2)}`
@@ -97,13 +123,71 @@ function NodeEditor({ node, onChange, onDelete, isFirst, isLast }) {
 }
 
 function App() {
-  const [nodes, setNodes] = useState(starterNodes)
-  const [attenuation, setAttenuation] = useState(0.35)
-  const [selectedId, setSelectedId] = useState('mufa-1')
+  const [initialProject] = useState(getInitialProject)
+  const [nodes, setNodes] = useState(initialProject.nodes)
+  const [attenuation, setAttenuation] = useState(initialProject.attenuation)
+  const [selectedId, setSelectedId] = useState(initialProject.selectedId)
   const [newType, setNewType] = useState('mufa')
+  const [saveStatus, setSaveStatus] = useState('Proyecto cargado')
+  const saveTimerRef = useRef(null)
   const route = useMemo(() => calculateDynamicRoute(nodes, attenuation), [nodes, attenuation])
   const selected = nodes.find((node) => node.id === selectedId) || nodes[0]
   const selectedResult = route.checkpoints.find((point) => point.id === selected?.id)
+
+  useEffect(() => {
+    setSaveStatus('Guardando…')
+    if (saveTimerRef.current) window.clearTimeout(saveTimerRef.current)
+
+    saveTimerRef.current = window.setTimeout(() => {
+      try {
+        window.localStorage.setItem(STORAGE_KEY, JSON.stringify({
+          version: 1,
+          nodes,
+          attenuation,
+          selectedId,
+          savedAt: new Date().toISOString(),
+        }))
+        setSaveStatus('Guardado automáticamente')
+      } catch (error) {
+        console.error('No se pudo guardar el proyecto.', error)
+        setSaveStatus('Error al guardar')
+      }
+    }, 250)
+
+    return () => {
+      if (saveTimerRef.current) window.clearTimeout(saveTimerRef.current)
+    }
+  }, [nodes, attenuation, selectedId])
+
+  const resetProject = () => {
+    const confirmed = window.confirm('¿Restaurar el escenario inicial? Se perderán los cambios guardados en este navegador.')
+    if (!confirmed) return
+
+    window.localStorage.removeItem(STORAGE_KEY)
+    setNodes(starterNodes)
+    setAttenuation(0.35)
+    setSelectedId('mufa-1')
+    setSaveStatus('Escenario restaurado')
+  }
+
+  const exportProject = () => {
+    const data = {
+      version: 1,
+      exportedAt: new Date().toISOString(),
+      attenuation,
+      nodes,
+    }
+
+    const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' })
+    const url = URL.createObjectURL(blob)
+    const link = document.createElement('a')
+    link.href = url
+    link.download = 'proyecto-ftth.json'
+    document.body.appendChild(link)
+    link.click()
+    link.remove()
+    URL.revokeObjectURL(url)
+  }
 
   const updateNode = (id, patch) => {
     setNodes((current) => current.map((node) => node.id === id ? { ...node, ...patch } : node))
@@ -181,8 +265,16 @@ function App() {
             <div><span>Nodos</span><strong>{nodes.length}</strong></div>
           </div>
 
+          <div className="divider" />
+
+          <div className="stat-list">
+            <div><span>Estado</span><strong>{saveStatus}</strong></div>
+          </div>
+          <button className="primary-btn full" onClick={exportProject}>Descargar respaldo JSON</button>
+          <button className="icon-btn full reset-btn" onClick={resetProject}>Restaurar escenario inicial</button>
+
           <div className="mini-note">
-            Este motor ya está preparado para que cada nodo pueda tener coordenadas reales cuando agreguemos el mapa.
+            Los cambios se guardan automáticamente en este navegador. El respaldo JSON sirve para conservar una copia externa. El motor ya está preparado para coordenadas reales cuando agreguemos el mapa.
           </div>
         </aside>
 
