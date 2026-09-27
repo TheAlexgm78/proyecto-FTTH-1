@@ -33,26 +33,26 @@ function signToken(user) {
 }
 
 export async function register(req, res) {
-  const email = String(req.body?.email || '').trim().toLowerCase()
-  const displayName = String(req.body?.displayName || '').trim()
-  const password = String(req.body?.password || '')
-
-  if (!email || !email.includes('@')) {
-    return res.status(400).json({ ok: false, error: 'Correo inválido.' })
-  }
-  if (displayName.length < 2) {
-    return res.status(400).json({ ok: false, error: 'Escribe tu nombre.' })
-  }
-  if (password.length < 8) {
-    return res.status(400).json({ ok: false, error: 'La contraseña debe tener al menos 8 caracteres.' })
-  }
-  if (bcrypt.truncates(password)) {
-    return res.status(400).json({ ok: false, error: 'La contraseña es demasiado larga para bcrypt.' })
-  }
-
   try {
+    const email = String(req.body?.email || '').trim().toLowerCase()
+    const displayName = String(req.body?.displayName || '').trim()
+    const password = String(req.body?.password || '')
+
+    if (!email || !email.includes('@')) {
+      return res.status(400).json({ ok: false, error: 'Correo inválido.' })
+    }
+    if (displayName.length < 2) {
+      return res.status(400).json({ ok: false, error: 'Escribe tu nombre.' })
+    }
+    if (password.length < 8) {
+      return res.status(400).json({ ok: false, error: 'La contraseña debe tener al menos 8 caracteres.' })
+    }
+    if (Buffer.byteLength(password, 'utf8') > 72) {
+      return res.status(400).json({ ok: false, error: 'La contraseña es demasiado larga.' })
+    }
+
     getJwtSecret()
-    const passwordHash = await bcrypt.hash(password, 12)
+    const passwordHash = await bcrypt.hash(password, 10)
     const result = await pool.query(
       `INSERT INTO app_users (email, password_hash, display_name, role)
        VALUES ($1, $2, $3, 'admin')
@@ -66,16 +66,19 @@ export async function register(req, res) {
     if (error.code === '23505') {
       return res.status(409).json({ ok: false, error: 'Ese correo ya está registrado.' })
     }
-    console.error(error)
-    return res.status(500).json({ ok: false, error: error.message })
+    console.error('REGISTER_ERROR', error)
+    return res.status(500).json({
+      ok: false,
+      error: error?.message || 'Error interno al registrar el usuario.',
+    })
   }
 }
 
 export async function login(req, res) {
-  const email = String(req.body?.email || '').trim().toLowerCase()
-  const password = String(req.body?.password || '')
-
   try {
+    const email = String(req.body?.email || '').trim().toLowerCase()
+    const password = String(req.body?.password || '')
+
     getJwtSecret()
     const result = await pool.query(
       `SELECT id, email, password_hash, display_name, role, created_at
@@ -93,8 +96,11 @@ export async function login(req, res) {
     const user = publicUser(row)
     return res.json({ ok: true, token: signToken(user), user })
   } catch (error) {
-    console.error(error)
-    return res.status(500).json({ ok: false, error: error.message })
+    console.error('LOGIN_ERROR', error)
+    return res.status(500).json({
+      ok: false,
+      error: error?.message || 'Error interno al iniciar sesión.',
+    })
   }
 }
 
