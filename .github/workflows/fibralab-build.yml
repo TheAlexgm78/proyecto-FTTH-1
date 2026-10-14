@@ -1,0 +1,44 @@
+name: Compilar FibraLab APK
+
+on:
+  push:
+    branches:
+      - laboratorio-fibra-apk
+  workflow_dispatch:
+
+jobs:
+  android:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Descargar código
+        uses: actions/checkout@v4
+
+      - name: Preparar Java 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Preparar Android SDK
+        uses: android-actions/setup-android@v3
+
+      - name: Preparar Gradle
+        uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.10.2'
+
+      - name: Restaurar proyecto fuente
+        run: |
+          base64 -d FibraLab_Compilacion.txt > FibraLab_Android_Proyecto.zip
+          unzip -q -o FibraLab_Android_Proyecto.zip
+
+      - name: Compilar APK Android
+        working-directory: FibraLab_Android
+        run: gradle :app:assembleDebug --no-daemon
+
+      - name: Adjuntar APK instalable
+        uses: actions/upload-artifact@v4
+        with:
+          name: FibraLab-Thealexgm78-APK
+          path: FibraLab_Android/app/build/outputs/apk/debug/app-debug.apk
+          retention-days: 90
